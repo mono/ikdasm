@@ -37,6 +37,14 @@ namespace Ildasm
 		Assembly = 0x20,
 		AssemblyRef = 0x23,
 		ExportedType = 0x27,
+		Document = 0x30,
+		MethodDebugInformation = 0x31,
+		LocalScope = 0x32,
+		LocalVariable = 0x33,
+		LocalConstant = 0x34,
+		ImportScope = 0x35,
+		StateMachineMethod = 0x36,
+		CustomDebugInformation = 0x37
 	}
 
 	class TableDumper
@@ -78,6 +86,18 @@ namespace Ildasm
 				break;
 			case MetadataTableIndex.CustomAttribute:
 				DumpCustomAttributeTable (w);
+				break;
+			case MetadataTableIndex.Document:
+				DumpDocumentTable (w);
+				break;
+			case MetadataTableIndex.MethodDebugInformation:
+				DumpMethodDebugInformationTable (w);
+				break;
+			case MetadataTableIndex.LocalScope:
+				DumpLocalScopeTable (w);
+				break;
+			case MetadataTableIndex.ImportScope:
+				DumpImportScopeTable (w);
 				break;
 			default:
 				throw new NotImplementedException ();
@@ -256,6 +276,182 @@ namespace Ildasm
 				method.Append (")");
 
 				w.WriteLine (String.Format ("{0}: {1}: {2} {3} {4}", rowIndex, parent, row, method, args));
+				rowIndex ++;
+			}
+		}
+
+		public byte[] GetBlobCopy (int blobIndex) {
+			var r = module.GetBlob (blobIndex);
+			return r.ReadBytes (r.Length);
+		}
+
+		public string GetBlobString (int blobIndex) {
+			var r = module.GetBlob (blobIndex);
+			return new String (Encoding.UTF8.GetChars (r.ReadBytes (r.Length)));
+		}
+
+		static string HexStringFromBytes(byte[] bytes)
+        {
+			var sb = new StringBuilder();
+			foreach (byte b in bytes)
+				sb.Append (b.ToString ("x2"));
+			return sb.ToString();
+		}
+
+		string DecodeDocumentName (DocumentTable.Record r) {
+			var nameReader = module.GetBlob (r.Name);
+			// FIXME: UTF8
+			var sep = nameReader.ReadChar ();
+			var name = "";
+			while (nameReader.Length > 0) {
+				var part = nameReader.ReadCompressedUInt ();
+				if (part != 0) {
+					var partReader = module.GetBlob (part);
+					var partString = new String (Encoding.UTF8.GetChars (partReader.ReadBytes (partReader.Length)));
+					if (name == "")
+						name = sep + partString;
+					else
+						name = name + sep + partString;
+				}
+			}
+			return name;
+		}
+
+		public void DumpDocumentTable (TextWriter w) {
+			var t = module.Document;
+			w.WriteLine ("Document table (1.." + t.RowCount + ")");
+			int rowIndex = 1;
+			foreach (var r in t.records) {
+				string name;
+				string hashAlg;
+				string hash;
+				string lang;
+				Guid g;
+
+				name = DecodeDocumentName (r);
+
+				// FIXME: SHA256
+				if (r.HashAlgorithm != 0) {
+					g = module.GetGuid (r.HashAlgorithm);
+					if (g == DocumentTable.SHA1Guid) {
+						hashAlg = "sha1";
+						hash = HexStringFromBytes (GetBlobCopy (r.Hash));
+					} else {
+						hashAlg = g.ToString ();
+						hash = "<>";
+					}
+				} else {
+					hashAlg = "";
+					hash = "<>";
+				}
+
+				// FIXME: VB/F#
+				if (r.Language != 0) {
+					g = module.GetGuid (r.Language);
+					if (g == DocumentTable.CSharpGuid) {
+						lang = "C#";
+					} else {
+						lang = g.ToString ();
+					}
+				} else {
+					lang = "";
+				}
+
+				w.WriteLine ("" + rowIndex + ": " + name + " lang=" + lang + " hash=[" + hashAlg + " " + hash + "]");
+
+				rowIndex ++;
+			}
+		}
+
+		public void DumpMethodDebugInformationTable (TextWriter w) {
+			var t = module.MethodDebugInformation;
+			w.WriteLine ("MethodDebugInformation table (1.." + t.RowCount + ")");
+			int rowIndex = 1;
+			foreach (var r in t.records) {
+				w.WriteLine ("" + rowIndex + ":");
+
+				if (r.SequencePoints == 0) {
+					rowIndex ++;
+					continue;
+				}
+
+				var reader = module.GetBlob (r.SequencePoints);
+
+				// First point record
+				var docIndex = reader.ReadCompressedUInt ();
+				var docName = DecodeDocumentName (module.Document.records [docIndex - 1]);
+				var ilOffset = reader.ReadCompressedUInt ();
+				var deltaLines = reader.ReadCompressedUInt ();
+				int deltaColumns;
+				if (deltaLines == 0)
+					deltaColumns = reader.ReadCompressedUInt ();
+				else
+					deltaColumns = reader.ReadCompressedInt ();
+				var startLine = reader.ReadCompressedUInt ();
+				var startColumn = reader.ReadCompressedUInt ();
+
+				w.WriteLine (docName + " il=" + ilOffset + " line=" + startLine + " col=" + startColumn + " endline=" + (startLine + deltaLines) + " endcol=" + (startColumn + deltaColumns));
+
+				while (reader.Length > 0) {
+					var deltaIlOffset = reader.ReadCompressedUInt ();
+					if (deltaIlOffset == 0) {
+						docIndex = reader.ReadCompressedUInt ();
+						docName = DecodeDocumentName (module.Document.records [docIndex - 1]);
+						continue;
+					}
+					ilOffset += deltaIlOffset;
+					deltaLines = reader.ReadCompressedUInt ();
+					if (deltaLines == 0)
+						deltaColumns = reader.ReadCompressedUInt ();
+					else
+						deltaColumns = reader.ReadCompressedInt ();
+					if (deltaLines == 0 && deltaColumns == 0) {
+						/* Hidden sequence point */
+						w.WriteLine (docName + " il=" + ilOffset + " hidden");
+						// FIXME: The line increment in the next record contains garbage ?
+						continue;
+					}
+					startLine += reader.ReadCompressedInt ();
+					startColumn += reader.ReadCompressedInt ();
+
+					w.WriteLine (docName + " il=" + ilOffset + " line=" + startLine + " col=" + startColumn + " endline=" + (startLine + deltaLines) + " endcol=" + (startColumn + deltaColumns));
+				}
+
+				rowIndex ++;
+			}
+		}
+
+		public void DumpLocalScopeTable (TextWriter w) {
+			var t = module.LocalScope;
+			w.WriteLine ("LocalScope table (1.." + t.RowCount + ")");
+			int rowIndex = 1;
+			foreach (var r in t.records) {
+				w.WriteLine ("" + rowIndex + ": method=" + r.Method + " import=" + r.ImportScope + " locals=" + r.VariableList);
+				rowIndex ++;
+			}
+		}
+
+		public void DumpImportScopeTable (TextWriter w) {
+			var t = module.ImportScope;
+			w.WriteLine ("ImportScope table (1.." + t.RowCount + ")");
+			int rowIndex = 1;
+			foreach (var r in t.records) {
+				w.WriteLine ("" + rowIndex + ": parent=" + r.Parent + " imports=" + r.Imports);
+
+				var reader = module.GetBlob (r.Imports);
+				while (reader.Length > 0) {
+					var kind = reader.ReadCompressedUInt ();
+					// FIXME: Constants
+					switch (kind) {
+					case 1:
+						var nsIndex = reader.ReadCompressedUInt ();
+						w.WriteLine ("\t ns=" + GetBlobString (nsIndex));
+						break;
+					default:
+						w.WriteLine ("K: " + kind);
+						throw new NotImplementedException ();
+					}
+				}
 				rowIndex ++;
 			}
 		}
