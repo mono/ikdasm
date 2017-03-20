@@ -51,6 +51,10 @@ namespace Ildasm
 						{ "moduleref", v =>tableToDump = MetadataTableIndex.ModuleRef },
 						{ "exported", v =>tableToDump = MetadataTableIndex.ExportedType },
 						{ "customattr", v =>tableToDump = MetadataTableIndex.CustomAttribute },
+						{ "document", v =>tableToDump = MetadataTableIndex.Document },
+						{ "methoddebuginfo", v =>tableToDump = MetadataTableIndex.MethodDebugInformation },
+						{ "localscope", v =>tableToDump = MetadataTableIndex.LocalScope },
+						{ "importscope", v =>tableToDump = MetadataTableIndex.ImportScope },
 					};
 				args = p.Parse (args).ToArray ();
 				if (printUsage) {
@@ -204,6 +208,10 @@ namespace Ildasm
                 Console.WriteLine ("  -moduleref         Dumps the contents of the ModuleRef table");
                 Console.WriteLine ("  -exported          Dumps the contents of the ExportedType table");
                 Console.WriteLine ("  -customattr        Dumps the contents of the CustomAttribute table");
+                Console.WriteLine ("  -document          Dumps the contents of the Document table");
+                Console.WriteLine ("  -methoddebuginfo   Dumps the contents of the MethodDebugInformation table");
+                Console.WriteLine ("  -localscope        Dumps the contents of the LocalScope table");
+                Console.WriteLine ("  -importscope       Dumps the contents of the ImportScope table");
             } else {
                 Console.WriteLine("  /OUT=<file name>    Direct output to file rather than to stdout.");
 				Console.WriteLine("  /COMPAT=<version>   Match ildasm behavior. (<version> = 2.0 | 4.0 | 4.5)");
