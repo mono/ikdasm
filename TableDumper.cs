@@ -80,6 +80,9 @@ namespace Ildasm
 			case MetadataTableIndex.AssemblyRef:
 				DumpAssemblyRefTable (w);
 				break;
+			case MetadataTableIndex.Module:
+				DumpModuleTable (w);
+				break;
 			case MetadataTableIndex.ModuleRef:
 				DumpModuleRefTable (w);
 				break;
@@ -159,6 +162,16 @@ namespace Ildasm
 					w.WriteLine ();
 				}
 				w.WriteLine ();
+				rowIndex ++;
+			}
+		}
+
+		void DumpModuleTable (TextWriter w) {
+			var t = module.ModuleTable;
+			w.WriteLine ("Module Table (1.." + t.RowCount + ")");
+			int rowIndex = 1;
+			foreach (var r in t.records) {
+				w.WriteLine (String.Format ("{0}: {1} {2} {{{3}}}", rowIndex, module.GetString (r.Name), r.Generation, module.GetGuid (r.Mvid).ToString ().ToUpper ()));
 				rowIndex ++;
 			}
 		}
